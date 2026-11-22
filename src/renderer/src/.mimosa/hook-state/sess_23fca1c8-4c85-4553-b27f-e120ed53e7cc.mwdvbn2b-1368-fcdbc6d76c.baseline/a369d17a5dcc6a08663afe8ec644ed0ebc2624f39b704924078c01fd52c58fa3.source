@@ -1,0 +1,113 @@
+import { useEffect, type ReactNode } from 'react'
+import { api, subscribeEvents } from './lib/api'
+import { useStudio } from './state/store'
+import { TopBar } from './shell/TopBar'
+import { CrewRail } from './shell/CrewRail'
+import { JobsRail } from './shell/JobsRail'
+import { Inspector } from './shell/Inspector'
+import { StatusBar } from './shell/StatusBar'
+import { Home } from './stages/Home'
+import { Chat } from './stages/Chat'
+import { Settings } from './stages/Settings'
+import { Assets } from './stages/Assets'
+import { Bible } from './stages/Bible'
+import { Placeholder } from './stages/Placeholder'
+import type { ThemeMode } from '@shared/ipc'
+
+/** Shell layout: glass top bar / crew rail / stage / inspector / status bar. */
+
+export default function App() {
+  const { theme, stage, activeProject, setTheme, setAppInfo, setProjects, setJobs, setBridge, setKeyStatus, upsertJob, booted, setBooted } =
+    useStudio()
+
+  // Boot: info + persisted state + event subscriptions.
+  useEffect(() => {
+    let disposed = false
+    const boot = async (): Promise<void> => {
+      const [info, themeMode, projects, jobs, keyStatus, bridgeState] = await Promise.all([
+        api.appInfo(),
+        api.getTheme(),
+        api.listProjects(),
+        api.listJobs(),
+        api.providerKeyStatus().catch(() => null),
+        api.bridgeStatus().catch(() => null)
+      ])
+      if (disposed) return
+      setAppInfo(info)
+      setTheme(themeMode)
+      setProjects(projects)
+      setJobs(jobs)
+      if (keyStatus) setKeyStatus(keyStatus)
+      // Sync bridge status at boot — the ready event may have fired before
+      // this window's listeners existed.
+      if (bridgeState) setBridge(bridgeState.status, bridgeState.detail)
+      setBooted(true)
+    }
+    void boot().catch((err) => console.error('boot failed', err))
+    const off = subscribeEvents({
+      onJob: (job) => upsertJob(job),
+      onBridge: ({ status, detail }) => setBridge(status, detail),
+      onProvider: () => void api.providerKeyStatus().then((k) => useStudio.getState().setKeyStatus(k)),
+      onScout: () => undefined // Scout activity is consumed by the Chat stage
+    })
+    return () => {
+      disposed = true
+      off()
+    }
+  }, [setAppInfo, setTheme, setProjects, setJobs, setKeyStatus, setBridge, upsertJob, setBooted])
+
+  // Theme application (dark is the design default).
+  useEffect(() => {
+    const resolve = (): 'dark' | 'light' =>
+      theme === 'system' ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark') : theme
+    const apply = (): void => {
+      document.documentElement.dataset.theme = resolve()
+    }
+    apply()
+    if (theme === 'system') {
+      const mq = window.matchMedia('(prefers-color-scheme: light)')
+      mq.addEventListener('change', apply)
+      return () => mq.removeEventListener('change', apply)
+    }
+  }, [theme])
+
+  // Keep main's theme row in sync when changed from TopBar.
+  useEffect(() => {
+    if (booted) void window.api.invoke('theme:set', useStudio.getState().theme as ThemeMode).catch(() => undefined)
+  }, [theme, booted])
+
+  const stageEl = (): ReactNode => {
+    if (stage === 'home' || (!activeProject && stage !== 'chat' && stage !== 'settings')) return <Home />
+    switch (stage) {
+      case 'chat':
+        return <Chat />
+      case 'settings':
+        return <Settings />
+      case 'assets':
+        return <Assets />
+      case 'bible':
+        return <Bible />
+      case 'script':
+      case 'preview':
+      case 'delivery':
+        return <Placeholder stage={stage} />
+      default:
+        return <Home />
+    }
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <TopBar />
+      <div className="flex min-h-0 flex-1">
+        {stage !== 'settings' ? <CrewRail /> : null}
+        <main className="flex min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1">{stageEl()}</div>
+          <JobsRail />
+        </main>
+        <Inspector />
+      </div>
+      <StatusBar />
+    </div>
+  )
+}

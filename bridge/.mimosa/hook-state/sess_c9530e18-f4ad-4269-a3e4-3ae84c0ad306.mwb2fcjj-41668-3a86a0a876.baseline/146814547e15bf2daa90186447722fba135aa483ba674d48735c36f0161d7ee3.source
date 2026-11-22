@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Standalone round-trip test for the Studio Bridge.
+
+Spawns bridge/server.py on a fresh interpreter, speaks newline-delimited
+JSON-RPC over stdio, and verifies the M0 exit-criteria methods:
+sys.ping, sys.paths, dwk.init_project, dwk.validate_project.
+
+Run:  bridge/.venv/Scripts/python bridge/test_bridge.py
+"""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+BRIDGE_DIR = Path(__file__).resolve().parent
+SERVER = BRIDGE_DIR / "server.py"
+
+EXPECTED_LAYOUT = [
+    "project.yml",
+    "research/sources.csv",
+    "research/evidence_ledger.csv",
+    "research/assets_to_download.csv",
+    "production/shot_list.csv",
+    "production/script.md",
+]
+
+
+def main() -> int:
+    root = Path(tempfile.mkdtemp(prefix="vendotube-bridge-test-"))
+    proc = subprocess.Popen(
+        [sys.executable, str(SERVER)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+    )
+    assert proc.stdin and proc.stdout
+
+    next_id = 0
+    failures: list[str] = []
+
+    def request(method: str, params: dict | None = None, timeout: float = 120.0) -> dict:
+        nonlocal next_id
+        next_id += 1
+        rid = next_id
+        frame = {"jsonrpc": "2.0", "id": rid, "method": method}
+        if params is not None:
+            frame["params"] = params
+        proc.stdin.write(json.dumps(frame) + "\n")
+        proc.stdin.flush()
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            line = proc.stdout.readline()
+            if not line:
+                raise RuntimeError(f"bridge closed stdout: {proc.stderr.read() if proc.stderr else ''}")
+            line = line.strip()
+            if not line:
+                continue
+            msg = json.loads(line)
+            if msg.get("id") == rid:
+                if "error" in msg:
+                    raise RuntimeError(f"{method} failed: {msg['error']}")
+                return msg["result"]
+        raise TimeoutError(f"{method} timed out after {timeout}s")
+
+    # 1. ping
+    pong = request("sys.ping")
+    print(f"ping -> {pong}")
+    if not pong.get("ok"):
+        failures.append("sys.ping not ok")
+    if not pong.get("dwk_loaded"):
+        failures.append(f"DWK not loaded: {pong.get('dwk_error')}")
+
+    # 2. paths (needs DWK for ffmpeg resolution)
+    paths = request("sys.paths")
+    print(f"paths -> ffmpeg={paths.get('ffmpeg')}")
+    if not paths.get("ffmpeg") or str(paths.get("ffmpeg")).startswith("unavailable"):
+        failures.append(f"ffmpeg not resolved: {paths.get('ffmpeg')}")
+
+    # 3. init_project → DWK layout on disk
+    project_path = root / "sample-project"
+    init = request(
+        "dwk.init_project",
+        {"path": str(project_path), "title": "Bridge Test Film", "fps": 60, "runtime": 90, "language": "en"},
+    )
+    print(f"init -> {init}")
+    for rel in EXPECTED_LAYOUT:
+        if not (project_path / rel).exists():
+            failures.append(f"missing after init: {rel}")
+
+    # 4. validate_project → structured report round-trip
+    report = request("dwk.validate_project", {"project_path": str(project_path)})
+    print(f"validate -> valid={report.get('valid')} errors={len(report.get('errors', []))} warnings={len(report.get('warnings', []))}")
+    if "project" not in report or "valid" not in report:
+        failures.append(f"validation report malformed: keys={sorted(report)[:8]}")
+    if not (project_path / "qc" / "validation_report.json").exists():
+        failures.append("validation report file not written")
+
+    # 5. unknown method → JSON-RPC error
+    try:
+        request("nope.nope")
+        failures.append("unknown method did not raise")
+    except RuntimeError as exc:
+        print(f"unknown method -> error (expected): {str(exc)[:60]}...")
+
+    proc.stdin.close()
+    proc.wait(timeout=10)
+
+    if failures:
+        print("\nFAIL:")
+        for f in failures:
+            print(f"  - {f}")
+        return 1
+    print("\nOK: bridge round-trip passed (ping, paths, init_project layout, validate_project report, error handling)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

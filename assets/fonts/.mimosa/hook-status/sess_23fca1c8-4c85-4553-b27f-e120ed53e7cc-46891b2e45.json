@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "mimosa-hook-status/v1",
+  "recordedAt": "2026-11-12T18:03:39.758Z",
+  "sessionId": "sess_23fca1c8-4c85-4553-b27f-e120ed53e7cc",
+  "event": "PostToolUse",
+  "toolName": "Edit",
+  "file": "D:\\Vendoria Projects\\VendoTube\\vendotube-studio\\tests\\producer.compositions.test.ts",
+  "outcome": "inconclusive",
+  "coverage": "partial",
+  "findingCount": 0,
+  "durationMs": 19,
+  "hostState": "hook_complete",
+  "reportHint": ".mimosa/reports/"
+}

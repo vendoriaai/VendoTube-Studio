@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "mimosa-hook-status/v1",
+  "recordedAt": "2026-11-12T19:08:26.946Z",
+  "sessionId": "sess_23fca1c8-4c85-4553-b27f-e120ed53e7cc",
+  "event": "PostToolUse",
+  "toolName": "Edit",
+  "file": "shell/JobsRail.tsx",
+  "outcome": "clear",
+  "coverage": "complete",
+  "findingCount": 0,
+  "durationMs": 31,
+  "hostState": "hook_complete",
+  "reportHint": ".mimosa/reports/"
+}

@@ -1,0 +1,161 @@
+import { useStudio } from '../state/store'
+import { api } from '../lib/api'
+import type { JobRecord } from '@shared/ipc'
+import { Badge, Button, ProgressBar, StatusDot, cn, Mono } from '../components/ui'
+
+/** Slim persistent progress list (UI-UX-SPEC §3 jobs rail). */
+
+const STATUS_TONE: Record<string, 'ok' | 'warn' | 'err' | 'idle' | 'muted'> = {
+  queued: 'idle',
+  running: 'warn',
+  awaiting_approval: 'warn',
+  done: 'ok',
+  failed: 'err',
+  cancelled: 'muted'
+}
+
+export function jobTone(job: JobRecord): 'ok' | 'warn' | 'err' | 'idle' | 'muted' {
+  return STATUS_TONE[job.status] ?? 'muted'
+}
+
+/** Gate id from a parked producer job's artifacts (pause result payload). */
+function pausedGate(job: JobRecord): string {
+  const paused = (job.artifacts as Array<{ pausedAtGate?: string }> | undefined)?.[0]
+  return String(paused?.pausedAtGate ?? 'G-D')
+}
+
+export function JobsRail() {
+  const { jobs, setInspectJob, inspectJobId, removeJob } = useStudio()
+  const list = Object.values(jobs)
+    .filter((j) => ['queued', 'running', 'awaiting_approval', 'failed'].includes(j.status))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .slice(-4)
+
+  const dismiss = async (id: string): Promise<void> => {
+    await api.dismissJob(id)
+    removeJob(id)
+  }
+  const dismissAll = async (): Promise<void> => {
+    await api.dismissJob(null)
+    for (const j of list) if (j.status === 'failed') removeJob(j.id)
+  }
+
+  if (list.length === 0) return null
+
+  return (
+    <div className="shrink-0 border-t border-line bg-bg-elevated px-3 py-2">
+      <div className="flex items-center gap-2 pb-1.5">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-ink-muted/70">Jobs</span>
+        {list.some((j) => ['failed', 'cancelled', 'done'].includes(j.status)) ? (
+          <button className="text-[10.5px] text-ink-muted hover:text-ink" onClick={() => void dismissAll()}>
+            clear finished
+          </button>
+        ) : null}
+      </div>
+      <div className="flex gap-2 overflow-x-auto">
+        {list.map((j) => (
+          <div
+            key={j.id}
+            className={cn(
+              'min-w-64 max-w-80 cursor-pointer rounded-card border bg-surface p-2.5 transition-colors hover:border-accent',
+              inspectJobId === j.id ? 'border-accent' : 'border-line'
+            )}
+            onClick={() => setInspectJob(j.id)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && setInspectJob(j.id)}
+          >
+            <div className="mb-1.5 flex items-center gap-2">
+              <StatusDot tone={jobTone(j)} pulse={j.status === 'running'} />
+              <span className="truncate text-[12px] font-medium">{j.kind}</span>
+              <Mono className="ml-auto text-[10px] text-ink-muted">{j.status}</Mono>
+            </div>
+            {j.status === 'running' ? (
+              <ProgressBar pct={j.progress?.pct} indeterminate={typeof j.progress?.pct !== 'number'} />
+            ) : j.status === 'failed' ? (
+              <div className="flex items-center gap-1.5">
+                <span className="min-w-0 flex-1 truncate text-[11px] text-danger" title={j.error ?? ''}>
+                  {j.error ?? 'failed'}
+                </span>
+                {j.resumable ? (
+                  <Button
+                    variant="subtle"
+                    className="!px-2 !py-0.5 !text-[11px]"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void api.retryJob(j.id)
+                    }}
+                  >
+                    Retry
+                  </Button>
+                ) : null}
+                <Button
+                  variant="ghost"
+                  className="!px-1.5 !py-0.5 !text-[11px]"
+                  title="Dismiss this failed job"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void dismiss(j.id)
+                  }}
+                >
+                  ✕
+                </Button>
+              </div>
+            ) : j.status === 'awaiting_approval' && ['producer.produce', 'showrunner.make', 'showrunner.refine'].includes(j.kind) ? (
+              <div className="space-y-1.5">
+                <Mono className="block text-[10px] text-ink-muted">
+                  gate {pausedGate(j)} — approve to continue
+                </Mono>
+                <div className="flex gap-1.5">
+                  <Button
+                    className="!px-2 !py-0.5 !text-[11px]"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void api.gateResolve(j.projectId ?? '', pausedGate(j), true)
+                    }}
+                  >
+                    Approve
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="!px-2 !py-0.5 !text-[11px]"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void api.gateResolve(j.projectId ?? '', pausedGate(j), false)
+                    }}
+                  >
+                    Decline
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between">
+                <Mono className="text-[10px] text-ink-muted">{j.progress?.phase ?? 'waiting'}</Mono>
+                {(j.status === 'queued' || j.status === 'awaiting_approval') && (
+                  <Button
+                    variant="ghost"
+                    className="!px-1.5 !py-0.5 !text-[11px]"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void api.cancelJob(j.id)
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export function JobStatusBadge({ job }: { job: JobRecord }) {
+  return (
+    <Badge tone={job.status === 'failed' ? 'danger' : job.status === 'done' ? 'ok' : job.status === 'cancelled' ? 'neutral' : 'warn'}>
+      {job.status}
+    </Badge>
+  )
+}

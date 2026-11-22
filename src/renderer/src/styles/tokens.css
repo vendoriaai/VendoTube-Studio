@@ -1,0 +1,133 @@
+@import 'tailwindcss';
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/space-grotesk';
+@import '@fontsource-variable/jetbrains-mono';
+
+/* ---------------------------------------------------------------- tokens
+   "Aurora Studio" — dark-first screening-room theme (UI-UX-SPEC §2).
+   Semantic tokens flip under [data-theme]; Tailwind utilities map via
+   @theme inline so `bg-surface`, `text-ink` etc. adapt automatically. */
+
+:root,
+[data-theme='dark'] {
+  --bg: #0a0d14;
+  --bg-elevated: #0e131d;
+  --surface: #141a26;
+  --surface-2: #1a2233;
+  --ink: #eaf0f7;
+  --ink-muted: #8b95a7;
+  --line: #232c3e;
+  --accent: #8b7cff;
+  --accent-soft: rgb(139 124 255 / 0.14);
+  --signal: #3ce0d0;
+  --warm: #ffb454;
+  --danger: #ff5d6c;
+  --glass: rgb(14 19 29 / 0.72);
+}
+
+[data-theme='light'] {
+  --bg: #f4f6fb;
+  --bg-elevated: #edf0f7;
+  --surface: #ffffff;
+  --surface-2: #f1f3f9;
+  --ink: #161b26;
+  --ink-muted: #5d6b82;
+  --line: #e1e6f0;
+  --accent: #6b5ce8;
+  --accent-soft: rgb(107 92 232 / 0.12);
+  --signal: #0e9f92;
+  --warm: #b45309;
+  --danger: #dc2f3f;
+  --glass: rgb(255 255 255 / 0.72);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-signal: var(--signal);
+  --color-warm: var(--warm);
+  --color-danger: var(--danger);
+
+  --font-display: 'Space Grotesk Variable', 'Space Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-ui: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+  --radius-input: 8px;
+  --radius-card: 14px;
+  --radius-sheet: 20px;
+}
+
+/* ----------------------------------------------------------------- base */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* Focus ring: 2px accent (UI-UX-SPEC §7) */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Slim scrollbars that match the chrome */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 4px;
+}
+
+/* ------------------------------------------------------------- aurora */
+
+.aurora {
+  position: relative;
+}
+.aurora::before {
+  content: '';
+  position: absolute;
+  inset: -80px 0 auto 0;
+  height: 220px;
+  pointer-events: none;
+  background:
+    radial-gradient(420px 180px at 18% 0%, rgb(139 124 255 / 0.1), transparent 70%),
+    radial-gradient(420px 180px at 78% 0%, rgb(60 224 208 / 0.07), transparent 70%);
+  z-index: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

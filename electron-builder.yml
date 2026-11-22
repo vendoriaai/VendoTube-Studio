@@ -1,0 +1,71 @@
+# electron-builder (M5): bundles the compiled app + the Studio Bridge Python
+# code + vendored fonts. Runtime dependencies remain external on this dev
+# milestone (documented below) — the full python-embed/FFmpeg/yt-dlp payload
+# bundling is a download-budget item for the release build.
+appId: studio.vendotube.app
+productName: VendoTube Studio
+# Builds are local artifacts only (no auto-update channel configured yet).
+publish: null
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+  - "!node_modules/**/{test,__tests__,tests}/**"
+  - "!**/*.{md,mdx}"
+asar: true
+extraResources:
+  # The Bridge Python sidecar (code + tests stay out of the payload).
+  - from: bridge
+    to: bridge
+    filter:
+      - "**/*"
+      - "!**/__pycache__/**"
+      - "!**/.venv/**"
+      - "!bridge/test_*.py"
+  # Vendored webfonts — renders and thumbnails must never fetch online.
+  - from: assets/fonts
+    to: fonts
+  # Window/taskbar icon for the packaged app (the exe + installer icons are
+  # embedded by electron-builder itself from build/icon.ico). window.ts
+  # resolves it from resources/build/icon.ico when packaged.
+  - from: build
+    to: build
+    filter:
+      - icon.ico
+      - icon.png
+win:
+  icon: build/icon.ico
+  target:
+    - nsis
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ${productName}-Setup-${version}.${ext}
+  # Assisted installer + uninstaller branding (SpiderBanner during install
+  # uses installerIcon too).
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  # MUI2 wizard art + license page — generated from Logo/ by
+  # scripts/make_brand_assets.py (exact-size 24-bit BMPs).
+  installerHeader: build/installer-header.bmp
+  installerSidebar: build/installer-sidebar.bmp
+  uninstallerSidebar: build/uninstaller-sidebar.bmp
+  license: build/license.txt
+  # Branded welcome page (first thing a user sees) — build/installer.nsh
+  # defines the customWelcomePage macro.
+  include: build/installer.nsh
+  # First-run conveniences: shortcuts + launch on finish.
+  shortcutName: VendoTube Studio
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  runAfterFinish: true
+  # Local-first: never wipe user projects when uninstalling (default, made
+  # explicit here so it is a documented promise).
+  deleteAppDataOnUninstall: false
+# Size budget note (ROADMAP M5): the app payload is < 120 MB unpacked today
+# (Electron ~250 MB installed). The release build additionally bundles
+# python-embed (~16 MB) + site-packages (edge-tts/DWK deps ~40 MB), FFmpeg
+# (~90 MB) and yt-dlp (~30 MB) under resources/ — see docs/RELEASE-NOTES.
